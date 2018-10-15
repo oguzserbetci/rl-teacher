@@ -104,6 +104,8 @@ class ComparisonRewardPredictor():
 
 
         # A vanilla multi-layer perceptron maps a (state, action) pair to a reward (Q-value)
+        # TODO switch out with a Bayesian network.
+        # TODO where/if is the variance sampled???
         mlp = FullyConnectedMLP(self.obs_shape, self.act_shape)
 
         self.q_value = self._predict_rewards(self.segment_obs_placeholder, self.segment_act_placeholder, mlp)
