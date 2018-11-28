@@ -10,7 +10,7 @@ setup(name='rl_teacher',
     version='0.0.1',
     install_requires=[
         'mujoco-py ~=0.5.7',
-        'gym[mujoco]',
+        'gym[mujoco] ~= 0.9.2',
         'tqdm',
         'matplotlib',
         'ipython',
