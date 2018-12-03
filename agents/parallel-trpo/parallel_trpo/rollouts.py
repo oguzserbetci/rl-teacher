@@ -108,6 +108,7 @@ class Actor(multiprocess.Process):
                     "human_obs": np.array(human_obs)}
                 return path
 
+
 class ParallelRollout(object):
     def __init__(self, env_id, make_env, reward_predictor, num_workers, max_timesteps_per_episode, seed):
         self.num_workers = num_workers
@@ -144,7 +145,8 @@ class ParallelRollout(object):
             #  START REWARD MODIFICATIONS  #
             ################################
             path["original_rewards"] = path["rewards"]
-            path["rewards"] = self.predictor.predict_reward(path)
+            # TODO try using lstm
+            path["rewards"], path["variance"] = self.predictor.predict_reward_with_uncertainty(path)
             self.predictor.path_callback(path)
             ################################
             #   END REWARD MODIFICATIONS   #

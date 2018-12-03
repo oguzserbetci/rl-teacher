@@ -9,13 +9,14 @@ def _slice_path(path, segment_length, start_pos=0):
     return {
         k: np.asarray(v[start_pos:(start_pos + segment_length)])
         for k, v in path.items()
-        if k in ['obs', "actions", 'original_rewards', 'human_obs']}
+        if k in ['obs', "actions", 'original_rewards', 'human_obs', 'variance']}
 
 def create_segment_q_states(segment):
     obs_Ds = segment["obs"]
     act_Ds = segment["actions"]
     return np.concatenate([obs_Ds, act_Ds], axis=1)
 
+# TODO consider running LSTM only over the segment...
 def sample_segment_from_path(path, segment_length):
     """Returns a segment sampled from a random place in a path. Returns None if the path is too short"""
     path_length = len(path["obs"])

@@ -1,8 +1,9 @@
 import numpy as np
 import tensorflow as tf
 
-from keras.layers import Dense, Dropout, LeakyReLU
+from keras.layers import Dense, Dropout, LeakyReLU, Lambda
 from keras.models import Sequential
+from keras import backend as K
 
 class FullyConnectedMLP(object):
     """Vanilla two hidden layer multi-layer perceptron"""
@@ -14,11 +15,11 @@ class FullyConnectedMLP(object):
         self.model.add(Dense(h_size, input_dim=input_dim))
         self.model.add(LeakyReLU())
 
-        self.model.add(Dropout(0.5))
+        self.model.add(Lambda(lambda x: K.dropout(x, level=0.5)))
         self.model.add(Dense(h_size))
         self.model.add(LeakyReLU())
 
-        self.model.add(Dropout(0.5))
+        self.model.add(Lambda(lambda x: K.dropout(x, level=0.5)))
         self.model.add(Dense(1))
 
     def run(self, obs, act):

@@ -52,6 +52,12 @@ class ComparisonRewardPredictor():
         self._n_timesteps_per_predictor_training = 1e2  # How often should we train our predictor?
         self._elapsed_predictor_training_iters = 0
 
+        # Uncertainty
+        self._num_mc_samples = 1000
+
+        # Selector
+        self._var_selector = True
+
         # Build and initialize our predictor model
         config = tf.ConfigProto(
             device_count={'GPU': 0}
@@ -131,6 +137,20 @@ class ComparisonRewardPredictor():
 
         return tf.get_default_graph()
 
+    def predict_reward_with_uncertainty(self, path):
+        """Predict the reward and the epistemic uncertainty for each step in a given path"""
+        # MC x T
+        q_values = np.zeros((self._num_mc_samples, len(path["obs"])))
+        with self.graph.as_default():
+            for i in range(self._num_mc_samples):
+                q_value = self.sess.run(self.q_value, feed_dict={
+                    self.segment_obs_placeholder: np.asarray([path["obs"]]),
+                    self.segment_act_placeholder: np.asarray([path["actions"]]),
+                    K.learning_phase(): False
+                })[0]
+                q_values[i] = q_value
+        return np.mean(q_values, axis=0), np.var(q_values, axis=0)
+
     def predict_reward(self, path):
         """Predict the reward for each step in a given path"""
         with self.graph.as_default():
@@ -153,10 +173,18 @@ class ComparisonRewardPredictor():
             self.recent_segments.append(segment)
 
         # If we need more comparisons, then we build them from our recent segments
-        if len(self.comparison_collector) < int(self.label_schedule.n_desired_labels):
-            self.comparison_collector.add_segment_pair(
-                random.choice(self.recent_segments),
-                random.choice(self.recent_segments))
+        if (len(self.recent_segments) > 100) and (len(self.comparison_collector) < int(self.label_schedule.n_desired_labels)):
+            if self._var_selector:
+                variances = [segment['variance'][0] for segment in self.recent_segments]
+                sort = np.argsort(variances)
+                print('select a pair out of', len(self.recent_segments), 'with variances', variances[sort[-1]], variances[sort[-2]])
+                self.agent_logger.log_simple('predictor/max_variance', variances[sort[-1]])
+                self.comparison_collector.add_segment_pair(self.recent_segments[sort[-1]], self.recent_segments[sort[-2]])
+                self.recent_segments = [segment for i, segment in enumerate(self.recent_segments) if i not in [sort[-1], sort[-2]]]
+            else:
+                self.comparison_collector.add_segment_pair(
+                    random.choice(self.recent_segments),
+                    random.choice(self.recent_segments))
 
         # Train our predictor every X steps
         if self._steps_since_last_training >= int(self._n_timesteps_per_predictor_training):
@@ -224,6 +252,7 @@ def main():
     parser.add_argument('-a', '--agent', default="parallel_trpo", type=str)
     parser.add_argument('-i', '--pretrain_iters', default=10000, type=int)
     parser.add_argument('-V', '--no_videos', action="store_true")
+    parser.add_argument('-S', '--selector', default=False, action="store_true")
     args = parser.parse_args()
 
     print("Setting things up...")
@@ -272,12 +301,13 @@ def main():
             label_schedule=label_schedule,
         )
 
-        print("Starting random rollouts to generate pretraining segments. No learning will take place...")
-        pretrain_segments = segments_from_rand_rollout(
-            env_id, make_with_torque_removed, n_desired_segments=pretrain_labels * 2,
-            clip_length_in_seconds=CLIP_LENGTH, workers=args.workers)
-        for i in range(pretrain_labels):  # Turn our random segments into comparisons
-            comparison_collector.add_segment_pair(pretrain_segments[i], pretrain_segments[i + pretrain_labels])
+        if pretrain_labels > 0:
+            print("Starting random rollouts to generate pretraining segments. No learning will take place...")
+            pretrain_segments = segments_from_rand_rollout(
+                env_id, make_with_torque_removed, n_desired_segments=pretrain_labels * 2,
+                clip_length_in_seconds=CLIP_LENGTH, workers=args.workers)
+            for i in range(pretrain_labels):  # Turn our random segments into comparisons
+                comparison_collector.add_segment_pair(pretrain_segments[i], pretrain_segments[i + pretrain_labels])
 
         # Sleep until the human has labeled most of the pretraining comparisons
         while len(comparison_collector.labeled_comparisons) < int(pretrain_labels * 0.75):

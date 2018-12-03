@@ -4,6 +4,7 @@ import os
 import os.path as osp
 import subprocess
 
+
 import numpy as np
 from gym import error
 
@@ -28,6 +29,9 @@ class SegmentVideoRecorder(object):
 
     def predict_reward(self, path):
         return self.predictor.predict_reward(path)
+
+    def predict_reward_with_uncertainty(self, path):
+        return self.predictor.predict_reward_with_uncertainty(path)
 
 def write_segment_to_video(segment, fname, env):
     os.makedirs(osp.dirname(fname), exist_ok=True)
