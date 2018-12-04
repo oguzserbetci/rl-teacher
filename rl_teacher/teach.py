@@ -151,6 +151,10 @@ class ComparisonRewardPredictor():
                 q_values[i] = q_value
         return np.mean(q_values, axis=0), np.var(q_values, axis=0)
 
+    def _tau_inv(self, prob, N, l2=0.005, lambda_=0.00001):
+        tau = prob * l2 / (2. * N * lambda_)
+        return 1. / tau
+
     def predict_reward(self, path):
         """Predict the reward for each step in a given path"""
         with self.graph.as_default():
@@ -338,7 +342,8 @@ def main():
             predictor=predictor,
             summary_writer=summary_writer,
             workers=args.workers,
-            runtime=(num_timesteps / 1000),
+            # TODO set runtime
+            runtime=(num_timesteps / 10),
             max_timesteps_per_episode=get_timesteps_per_episode(env),
             timesteps_per_batch=8000,
             max_kl=0.001,
