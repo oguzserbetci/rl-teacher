@@ -19,6 +19,10 @@ class FullyConnectedMLP(object):
         self.model.add(LeakyReLU())
 
         self.model.add(Dropout(0.5))
+        self.model.add(Dense(h_size))
+        self.model.add(LeakyReLU())
+
+        self.model.add(Dropout(0.5))
         self.model.add(Dense(1))
 
     def run(self, obs, act):
