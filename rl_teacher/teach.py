@@ -53,7 +53,7 @@ class ComparisonRewardPredictor():
         self._elapsed_predictor_training_iters = 0
 
         # Uncertainty
-        self._num_mc_samples = 1000
+        self._num_mc_samples = 10
 
         # Selector
         self._var_selector = True
@@ -66,6 +66,8 @@ class ComparisonRewardPredictor():
         self.obs_shape = env.observation_space.shape
         self.discrete_action_space = not hasattr(env.action_space, "shape")
         self.act_shape = (env.action_space.n,) if self.discrete_action_space else env.action_space.shape
+
+        print('OxA:', self.obs_shape, self.act_shape)
         self.graph = self._build_model()
         self.sess.run(tf.global_variables_initializer())
 
@@ -107,7 +109,6 @@ class ComparisonRewardPredictor():
             dtype=tf.float32, shape=(None, None) + self.act_shape, name="act_placeholder")
         self.segment_alt_act_placeholder = tf.placeholder(
             dtype=tf.float32, shape=(None, None) + self.act_shape, name="alt_act_placeholder")
-
 
         # A vanilla multi-layer perceptron maps a (state, action) pair to a reward (Q-value)
         # TODO switch out with a Bayesian network.
@@ -177,9 +178,9 @@ class ComparisonRewardPredictor():
             self.recent_segments.append(segment)
 
         # If we need more comparisons, then we build them from our recent segments
-        if (len(self.recent_segments) > 100) and (len(self.comparison_collector) < int(self.label_schedule.n_desired_labels)):
+        if (len(self.recent_segments) > 10) and (len(self.comparison_collector) < int(self.label_schedule.n_desired_labels)):
             if self._var_selector:
-                variances = [segment['variance'][0] for segment in self.recent_segments]
+                variances = [sum(segment['variance']) for segment in self.recent_segments]
                 sort = np.argsort(variances)
                 print('select a pair out of', len(self.recent_segments), 'with variances', variances[sort[-1]], variances[sort[-2]])
                 self.agent_logger.log_simple('predictor/max_variance', variances[sort[-1]])
@@ -343,7 +344,7 @@ def main():
             summary_writer=summary_writer,
             workers=args.workers,
             # TODO set runtime
-            runtime=(num_timesteps / 10),
+            runtime=(num_timesteps / 100),
             max_timesteps_per_episode=get_timesteps_per_episode(env),
             timesteps_per_batch=8000,
             max_kl=0.001,
