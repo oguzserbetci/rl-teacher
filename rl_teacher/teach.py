@@ -184,6 +184,9 @@ class ComparisonRewardPredictor():
                 sort = np.argsort(variances)
                 print('select a pair out of', len(self.recent_segments), 'with variances', variances[sort[-1]], variances[sort[-2]])
                 self.agent_logger.log_simple('predictor/max_variance', variances[sort[-1]])
+                self.agent_logger.log_simple('predictor/min_variance', variances[sort[0]])
+                self.agent_logger.log_simple('predictor/mean_variance', np.mean(variances))
+                self.agent_logger.log_simple('predictor/median_variance', np.median(variances))
                 self.comparison_collector.add_segment_pair(self.recent_segments[sort[-1]], self.recent_segments[sort[-2]])
                 self.recent_segments = [segment for i, segment in enumerate(self.recent_segments) if i not in [sort[-1], sort[-2]]]
             else:
