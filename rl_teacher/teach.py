@@ -347,7 +347,7 @@ def main():
             summary_writer=summary_writer,
             workers=args.workers,
             # TODO set runtime
-            runtime=(num_timesteps / 100),
+            runtime=(num_timesteps / 800),
             max_timesteps_per_episode=get_timesteps_per_episode(env),
             timesteps_per_batch=8000,
             max_kl=0.001,
