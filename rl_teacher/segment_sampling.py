@@ -26,6 +26,8 @@ def sample_segment_from_path(path, segment_length):
 
     # Build segment
     segment = _slice_path(path, segment_length, start_pos)
+    if "state_loss" in path.keys():
+        segment["state_loss"] = path["state_loss"]
 
     # Add q_states
     segment["q_states"] = create_segment_q_states(segment)

@@ -52,6 +52,8 @@ class ComparisonRewardPredictor():
         self._n_timesteps_per_predictor_training = 1e2  # How often should we train our predictor?
         self._elapsed_predictor_training_iters = 0
 
+        self._srl_selector = True
+
         # Build and initialize our predictor model
         config = tf.ConfigProto(
             device_count={'GPU': 0}
@@ -151,12 +153,12 @@ class ComparisonRewardPredictor():
     def predict_reward_state_loss(self, path):
         """Predict the reward for each step in a given path"""
         with self.graph.as_default():
-            q_value = self.sess.run(self.q_value, self.left_state_loss, feed_dict={
+            q_value, state_loss = self.sess.run([self.q_value, self.left_state_loss], feed_dict={
                 self.segment_obs_placeholder: np.asarray([path["obs"]]),
                 self.segment_act_placeholder: np.asarray([path["actions"]]),
                 K.learning_phase(): False
             })
-        return q_value
+        return q_value[0], state_loss
 
     def path_callback(self, path):
         path_length = len(path["obs"])
@@ -170,10 +172,21 @@ class ComparisonRewardPredictor():
             self.recent_segments.append(segment)
 
         # If we need more comparisons, then we build them from our recent segments
-        if len(self.comparison_collector) < int(self.label_schedule.n_desired_labels):
-            self.comparison_collector.add_segment_pair(
-                random.choice(self.recent_segments),
-                random.choice(self.recent_segments))
+        if (len(self.recent_segments) > 10) and (len(self.comparison_collector) < int(self.label_schedule.n_desired_labels)):
+            if self._srl_selector:
+                state_losses = [segment['state_loss'] for segment in self.recent_segments]
+                sort = np.argsort(state_losses)
+                print('select a pair out of', len(self.recent_segments), 'with state_losses', state_losses[sort[-1]], state_losses[sort[-2]])
+                self.agent_logger.log_simple('predictor/max_srl_loss', state_losses[sort[-1]])
+                self.agent_logger.log_simple('predictor/min_srl_loss', state_losses[sort[0]])
+                self.agent_logger.log_simple('predictor/mean_srl_loss', np.mean(state_losses))
+                self.agent_logger.log_simple('predictor/median_srl_loss', np.median(state_losses))
+                self.comparison_collector.add_segment_pair(self.recent_segments[sort[-1]], self.recent_segments[sort[-2]])
+                self.recent_segments = [segment for i, segment in enumerate(self.recent_segments) if i not in [sort[-1], sort[-2]]]
+            else:
+                self.comparison_collector.add_segment_pair(
+                    random.choice(self.recent_segments),
+                    random.choice(self.recent_segments))
 
         # Train our predictor every X steps
         if self._steps_since_last_training >= int(self._n_timesteps_per_predictor_training):
