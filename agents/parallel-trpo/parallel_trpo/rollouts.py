@@ -144,7 +144,7 @@ class ParallelRollout(object):
             #  START REWARD MODIFICATIONS  #
             ################################
             path["original_rewards"] = path["rewards"]
-            path["rewards"] = self.predictor.predict_reward(path)
+            path["rewards"], path["state_loss"] = self.predictor.predict_reward_state_loss(path)
             self.predictor.path_callback(path)
             ################################
             #   END REWARD MODIFICATIONS   #

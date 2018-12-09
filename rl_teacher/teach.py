@@ -14,7 +14,7 @@ from rl_teacher.comparison_collectors import SyntheticComparisonCollector, Human
 from rl_teacher.envs import get_timesteps_per_episode
 from rl_teacher.envs import make_with_torque_removed
 from rl_teacher.label_schedules import LabelAnnealer, ConstantLabelSchedule
-from rl_teacher.nn import FullyConnectedMLP
+from rl_teacher.nn import FullyConnectedMLP, RepresentationLearningMLP
 from rl_teacher.segment_sampling import sample_segment_from_path
 from rl_teacher.segment_sampling import segments_from_rand_rollout
 from rl_teacher.summaries import AgentLogger, make_summary_writer
@@ -78,10 +78,10 @@ class ComparisonRewardPredictor():
         acts = tf.reshape(act_segments, (-1,) + self.act_shape)
 
         # Run them through our neural network
-        rewards = network.run(obs, acts)
+        rewards, next_states = network.run(obs, acts)
 
         # Group the rewards back into their segments
-        return tf.reshape(rewards, (batchsize, segment_length))
+        return tf.reshape(rewards, (batchsize, segment_length)), tf.reshape(next_states, (batchsize, segment_length, -1))
 
     def _build_model(self):
         """
@@ -102,14 +102,21 @@ class ComparisonRewardPredictor():
         self.segment_alt_act_placeholder = tf.placeholder(
             dtype=tf.float32, shape=(None, None) + self.act_shape, name="alt_act_placeholder")
 
-
         # A vanilla multi-layer perceptron maps a (state, action) pair to a reward (Q-value)
-        # TODO switch out with a Bayesian network.
-        # TODO where/if is the variance sampled???
-        mlp = FullyConnectedMLP(self.obs_shape, self.act_shape)
+        # mlp = FullyConnectedMLP(self.obs_shape, self.act_shape)
+        mlp = RepresentationLearningMLP(self.obs_shape, self.act_shape)
+        # mlp = AdapterMLP(7)
 
-        self.q_value = self._predict_rewards(self.segment_obs_placeholder, self.segment_act_placeholder, mlp)
-        alt_q_value = self._predict_rewards(self.segment_alt_obs_placeholder, self.segment_alt_act_placeholder, mlp)
+        self.q_value, left_states = self._predict_rewards(self.segment_obs_placeholder, self.segment_act_placeholder, mlp)
+        alt_q_value, right_states = self._predict_rewards(self.segment_alt_obs_placeholder, self.segment_alt_act_placeholder, mlp)
+
+        next_left_states = self.segment_obs_placeholder[:,1:]
+        next_right_states = self.segment_alt_obs_placeholder[:,1:]
+
+        self.left_state_loss = tf.losses.mean_squared_error(next_left_states, left_states[:,:-1])
+        right_state_loss = tf.losses.mean_squared_error(next_right_states, right_states[:,:-1])
+
+        state_loss = tf.reduce_sum([self.left_state_loss, right_state_loss])
 
         # We use trajectory segments rather than individual (state, action) pairs because
         # video clips of segments are easier for humans to evaluate
@@ -124,7 +131,7 @@ class ComparisonRewardPredictor():
 
         data_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=reward_logits, labels=self.labels)
 
-        self.loss_op = tf.reduce_mean(data_loss)
+        self.loss_op = tf.reduce_mean(data_loss) + tf.reduce_mean(state_loss)
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         self.train_op = tf.train.AdamOptimizer().minimize(self.loss_op, global_step=global_step)
@@ -140,6 +147,16 @@ class ComparisonRewardPredictor():
                 K.learning_phase(): False
             })
         return q_value[0]
+
+    def predict_reward_state_loss(self, path):
+        """Predict the reward for each step in a given path"""
+        with self.graph.as_default():
+            q_value = self.sess.run(self.q_value, self.left_state_loss, feed_dict={
+                self.segment_obs_placeholder: np.asarray([path["obs"]]),
+                self.segment_act_placeholder: np.asarray([path["actions"]]),
+                K.learning_phase(): False
+            })
+        return q_value
 
     def path_callback(self, path):
         path_length = len(path["obs"])
