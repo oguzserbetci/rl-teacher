@@ -133,9 +133,11 @@ class ComparisonRewardPredictor():
 
         data_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=reward_logits, labels=self.labels)
 
-        self.loss_op = tf.reduce_mean(data_loss) + tf.reduce_mean(state_loss)
+        self.state_loss_op = tf.reduce_mean(state_loss)
+        self.loss_op = tf.reduce_mean(data_loss) + self.state_loss_op
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
+        self.pretrain_op = tf.train.AdamOptimizer().minimize(self.state_loss_op, global_step=global_step)
         self.train_op = tf.train.AdamOptimizer().minimize(self.loss_op, global_step=global_step)
 
         return tf.get_default_graph()
@@ -215,6 +217,27 @@ class ComparisonRewardPredictor():
             })
             self._elapsed_predictor_training_iters += 1
             self._write_training_summaries(loss)
+
+    def pretrain_predictor(self):
+        self.comparison_collector.label_unlabeled_comparisons()
+
+        minibatch_size = min(64, len(self.comparison_collector.labeled_decisive_comparisons))
+        labeled_comparisons = random.sample(self.comparison_collector.labeled_decisive_comparisons, minibatch_size)
+        left_obs = np.asarray([comp['left']['obs'] for comp in labeled_comparisons])
+        left_acts = np.asarray([comp['left']['actions'] for comp in labeled_comparisons])
+        right_obs = np.asarray([comp['right']['obs'] for comp in labeled_comparisons])
+        right_acts = np.asarray([comp['right']['actions'] for comp in labeled_comparisons])
+
+        with self.graph.as_default():
+            _, loss = self.sess.run([self.pretrain_op, self.state_loss_op], feed_dict={
+                self.segment_obs_placeholder: left_obs,
+                self.segment_act_placeholder: left_acts,
+                self.segment_alt_obs_placeholder: right_obs,
+                self.segment_alt_act_placeholder: right_acts,
+                K.learning_phase(): True
+            })
+            self._elapsed_predictor_training_iters += 1
+            self.agent_logger.log_simple("predictor/pretrain_state_loss", loss)
 
     def _write_training_summaries(self, loss):
         self.agent_logger.log_simple("predictor/loss", loss)
@@ -308,6 +331,13 @@ def main():
             clip_length_in_seconds=CLIP_LENGTH, workers=args.workers)
         for i in range(pretrain_labels):  # Turn our random segments into comparisons
             comparison_collector.add_segment_pair(pretrain_segments[i], pretrain_segments[i + pretrain_labels])
+
+        # Start the pretraining
+        for i in range(args.pretrain_iters):
+            predictor.pretrain_predictor()  # Train on pretraining labels
+            if i % 100 == 0:
+                print("%s/%s predictor pretraining iters... " % (i, args.pretrain_iters))
+
 
         # Sleep until the human has labeled most of the pretraining comparisons
         while len(comparison_collector.labeled_comparisons) < int(pretrain_labels * 0.75):
