@@ -48,7 +48,7 @@ class RepresentationLearningMLP(object):
         x = Dense(h_size)(x)
         x = LeakyReLU()(x)
 
-        # x = Dropout(0.2)(x)
+        x = Dropout(0.5)(x)
         reward = Dense(1)(x)
         next_state = Dense(obs_dim)(x)
 
