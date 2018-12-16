@@ -134,7 +134,7 @@ class ComparisonRewardPredictor():
         data_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=reward_logits, labels=self.labels)
 
         self.state_loss_op = tf.reduce_mean(state_loss)
-        self.loss_op = tf.reduce_mean(data_loss) + self.state_loss_op
+        self.loss_op = 0.1 * tf.reduce_mean(data_loss) + self.state_loss_op
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         self.pretrain_op = tf.train.AdamOptimizer().minimize(self.state_loss_op, global_step=global_step)
@@ -333,11 +333,10 @@ def main():
             comparison_collector.add_segment_pair(pretrain_segments[i], pretrain_segments[i + pretrain_labels])
 
         # Start the pretraining
-        for i in range(args.pretrain_iters):
+        for i in range(1000):
             predictor.pretrain_predictor()  # Train on pretraining labels
             if i % 100 == 0:
                 print("%s/%s predictor pretraining iters... " % (i, args.pretrain_iters))
-
 
         # Sleep until the human has labeled most of the pretraining comparisons
         while len(comparison_collector.labeled_comparisons) < int(pretrain_labels * 0.75):
